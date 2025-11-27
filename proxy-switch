@@ -1,0 +1,219 @@
+#!/usr/bin/env zsh
+set -euo pipefail
+
+: "${PROXY_SWITCH_HOME:="$HOME/.proxy-switch"}"
+typeset -g PROXY_ENVS_DIR="$PROXY_SWITCH_HOME/envs"
+typeset -g PROXY_CHOICE_FILE="$PROXY_SWITCH_HOME/choice"
+
+_proxy_log()  { print -r -- "$*"; }
+_proxy_err()  { print -r -- "✗ $*" >&2; }
+_proxy_info() { print -r -- "▸ $*"; }
+_proxy_ok()   { print -r -- "✓ $*"; }
+
+_proxy_ensure_home() {
+  [[ -d "$PROXY_SWITCH_HOME" ]] || mkdir -p "$PROXY_SWITCH_HOME"
+  [[ -d "$PROXY_ENVS_DIR" ]] || mkdir -p "$PROXY_ENVS_DIR"
+}
+
+_proxy_list_envs() {
+  local -a envs
+  if [[ -d "$PROXY_ENVS_DIR" ]]; then
+    envs=(${PROXY_ENVS_DIR}/*.env(N:t:r))
+  fi
+  print -l -- ${envs[@]}
+}
+
+_proxy_valid_env() {
+  local env_name="$1"
+  [[ -f "$PROXY_ENVS_DIR/${env_name}.env" ]]
+}
+
+_proxy_read_choice() {
+  if [[ -f "$PROXY_CHOICE_FILE" ]]; then
+    local saved
+    saved="$(<"$PROXY_CHOICE_FILE")"
+    if [[ "$saved" == "off" ]] || _proxy_valid_env "$saved"; then
+      print -r -- "$saved"
+      return
+    fi
+  fi
+  print -r -- "off"
+}
+
+_proxy_write_choice() {
+  local choice="$1"
+  _proxy_ensure_home
+  print -r -- "$choice" >| "$PROXY_CHOICE_FILE"
+}
+
+_proxy_load_env() {
+  local env_name="$1"
+  local env_file="$PROXY_ENVS_DIR/${env_name}.env"
+  if [[ ! -f "$env_file" ]]; then
+    _proxy_err "环境配置不存在: $env_file"
+    return 1
+  fi
+  source "$env_file"
+}
+
+_proxy_show_status() {
+  local choice="$(_proxy_read_choice)"
+  if [[ "$choice" == "off" ]]; then
+    _proxy_info "当前代理状态: 关闭"
+  else
+    _proxy_info "当前代理选择: $choice"
+    local env_file="$PROXY_ENVS_DIR/${choice}.env"
+    if [[ -f "$env_file" ]]; then
+      echo ""
+      echo "配置文件: $env_file"
+      echo "配置内容:"
+      cat "$env_file"
+    else
+      _proxy_err "配置文件不存在: $env_file"
+    fi
+  fi
+  echo ""
+  echo "当前环境变量:"
+  echo "  http_proxy:  ${http_proxy:-<未设置>}"
+  echo "  https_proxy: ${https_proxy:-<未设置>}"
+  echo "  all_proxy:   ${all_proxy:-<未设置>}"
+}
+
+_proxy_emit_env() {
+  local quiet="$1"
+  local choice="$(_proxy_read_choice)"
+
+  (( quiet )) || echo "# proxy-switch env ($choice)"
+
+  if [[ "$choice" == "off" ]]; then
+    echo "unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY 2>/dev/null || true"
+  else
+    local env_file="$PROXY_ENVS_DIR/${choice}.env"
+    if [[ -f "$env_file" ]]; then
+      cat "$env_file"
+      echo 'export HTTP_PROXY=$http_proxy HTTPS_PROXY=$https_proxy ALL_PROXY=$all_proxy'
+    else
+      echo "unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY 2>/dev/null || true"
+    fi
+  fi
+}
+
+_proxy_use() {
+  local env_name="$1"
+  if ! _proxy_valid_env "$env_name"; then
+    _proxy_err "无效的代理环境: $env_name"
+    echo ""
+    echo "可用的代理环境:"
+    local -a envs
+    envs=($(_proxy_list_envs))
+    if (( ${#envs[@]} == 0 )); then
+      echo "  (无)"
+      echo ""
+      echo "请在 $PROXY_ENVS_DIR/ 目录下创建 .env 文件"
+    else
+      for e in "${envs[@]}"; do
+        echo "  - $e"
+      done
+    fi
+    return 1
+  fi
+  _proxy_write_choice "$env_name"
+  _proxy_ok "已切换代理环境: $env_name"
+  echo ""
+  echo "提示：运行 \`eval \"\$(proxy-switch env)\"\` 或重新加载 shell 应用到当前会话。"
+  echo ""
+  _proxy_show_status
+}
+
+_proxy_off() {
+  _proxy_write_choice "off"
+  _proxy_ok "已关闭代理"
+  echo ""
+  echo "提示：运行 \`eval \"\$(proxy-switch env)\"\` 或重新加载 shell 应用到当前会话。"
+}
+
+_proxy_list() {
+  local choice="$(_proxy_read_choice)"
+  echo "可用的代理环境:"
+  local -a envs
+  envs=($(_proxy_list_envs))
+  if (( ${#envs[@]} == 0 )); then
+    echo "  (无)"
+    echo ""
+    echo "请在 $PROXY_ENVS_DIR/ 目录下创建 .env 文件"
+  else
+    for e in "${envs[@]}"; do
+      if [[ "$e" == "$choice" ]]; then
+        echo "  * $e (当前)"
+      else
+        echo "    $e"
+      fi
+    done
+  fi
+}
+
+_proxy_usage() {
+  cat <<'H'
+用法：
+  proxy-switch use <env>       # 切换到指定的代理环境
+  proxy-switch off             # 关闭代理
+  proxy-switch show            # 显示当前代理状态
+  proxy-switch list            # 列出所有可用的代理环境
+  proxy-switch env [--quiet]   # 输出需要执行的环境变量设置命令
+  proxy-switch help            # 查看帮助
+
+配置文件目录: ~/.proxy-switch/envs/
+  每个 .env 文件定义一个代理环境，文件名即环境名。
+  例如: surge.env, clash.env
+
+示例 .env 文件内容:
+  export http_proxy=http://127.0.0.1:6152
+  export https_proxy=http://127.0.0.1:6152
+  export all_proxy=socks5://127.0.0.1:6153
+
+常用场景：
+  proxy-switch use surge       # 切换到 surge 代理
+  proxy-switch off             # 关闭代理
+  eval "$(proxy-switch env)"   # 让当前 shell 立即生效
+H
+}
+
+command="${1:-help}"
+shift 2>/dev/null || true
+
+case "$command" in
+  use)
+    if [[ -z "${1:-}" ]]; then
+      _proxy_err "请指定代理环境名称"
+      echo ""
+      _proxy_list
+      exit 1
+    fi
+    _proxy_use "$1"
+    ;;
+  off)
+    _proxy_off
+    ;;
+  show|status)
+    _proxy_show_status
+    ;;
+  list|ls)
+    _proxy_list
+    ;;
+  env)
+    quiet=0
+    if [[ "${1:-}" == "--quiet" || "${1:-}" == "-q" ]]; then
+      quiet=1
+    fi
+    _proxy_emit_env "$quiet"
+    ;;
+  help|-h|--help)
+    _proxy_usage
+    ;;
+  *)
+    _proxy_err "未知命令: $command"
+    echo
+    _proxy_usage
+    exit 1
+    ;;
+esac
