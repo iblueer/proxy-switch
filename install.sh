@@ -27,19 +27,31 @@ else
   printf 'ℹ️  PATH 已包含 %s\n' "$INSTALL_DIR"
 fi
 
-if ! grep -q "$SNIPPET_MARKER" "$ZSHRC" 2>/dev/null; then
-  printf '🧩 写入 shell 启动配置...\n'
-  {
-    echo ''
-    echo "$SNIPPET_MARKER"
-    echo 'if command -v proxy-switch >/dev/null 2>&1; then'
-    echo '  eval "$(proxy-switch env --quiet)"'
-    echo 'fi'
-    echo '# proxy-switch 自动配置 END'
-  } >> "$ZSHRC"
-else
-  printf 'ℹ️  ~/.zshrc 已包含 proxy-switch 配置片段\n'
+if grep -q "$SNIPPET_MARKER" "$ZSHRC" 2>/dev/null; then
+  printf '🔄 检测到旧配置，正在更新...\n'
+  sed -i '' '/# proxy-switch 自动配置/,/# proxy-switch 自动配置 END/d' "$ZSHRC"
 fi
+
+printf '🧩 写入 shell 启动配置...\n'
+{
+  echo ''
+  echo "$SNIPPET_MARKER"
+  echo 'if command -v proxy-switch >/dev/null 2>&1; then'
+  echo '  eval "$(proxy-switch env --quiet)"'
+  echo '  # 定义包装函数，在 use/off 后自动应用环境变量'
+  echo '  proxy-switch() {'
+  echo '    command proxy-switch "$@"'
+  echo '    local ret=$?'
+  echo '    case "${1:-}" in'
+  echo '      use|off)'
+  echo '        eval "$(command proxy-switch env --quiet)"'
+  echo '        ;;'
+  echo '    esac'
+  echo '    return $ret'
+  echo '  }'
+  echo 'fi'
+  echo '# proxy-switch 自动配置 END'
+} >> "$ZSHRC"
 
 # 创建默认的 env 文件（如果不存在）
 if [[ ! -f "$ENVS_DIR/surge.env" ]]; then

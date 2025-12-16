@@ -119,17 +119,11 @@ _proxy_use() {
   fi
   _proxy_write_choice "$env_name"
   _proxy_ok "已切换代理环境: $env_name"
-  echo ""
-  echo "提示：运行 \`eval \"\$(proxy-switch env)\"\` 或重新加载 shell 应用到当前会话。"
-  echo ""
-  _proxy_show_status
 }
 
 _proxy_off() {
   _proxy_write_choice "off"
   _proxy_ok "已关闭代理"
-  echo ""
-  echo "提示：运行 \`eval \"\$(proxy-switch env)\"\` 或重新加载 shell 应用到当前会话。"
 }
 
 _proxy_list() {
