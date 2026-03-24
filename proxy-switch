@@ -87,16 +87,17 @@ _proxy_emit_env() {
 
   if [[ "$choice" == "off" ]]; then
     echo "unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY 2>/dev/null || true"
-  else
-    local env_file="$PROXY_ENVS_DIR/${choice}.env"
-    if [[ -f "$env_file" ]]; then
-      cat "$env_file"
-      echo 'export HTTP_PROXY=$http_proxy HTTPS_PROXY=$https_proxy ALL_PROXY=$all_proxy'
-    else
-      echo "unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY 2>/dev/null || true"
-    fi
-  fi
-}
+	  else
+	    local env_file="$PROXY_ENVS_DIR/${choice}.env"
+	    if [[ -f "$env_file" ]]; then
+	      cat "$env_file"
+	      echo ""
+	      echo 'export HTTP_PROXY=$http_proxy HTTPS_PROXY=$https_proxy ALL_PROXY=$all_proxy'
+	    else
+	      echo "unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY 2>/dev/null || true"
+	    fi
+	  fi
+	}
 
 _proxy_use() {
   local env_name="$1"
